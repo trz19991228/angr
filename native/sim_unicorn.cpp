@@ -583,6 +583,10 @@ public:
 		// Save details of block of instruction where we stopped
 		stopped_at_instr.block_addr = current_block_start_address;
 		stopped_at_instr.block_size = current_block_size;
+		if (is_symbolic_tracking_disabled()) {
+			// Exit statement address not available if symbolic tracking is disabled.
+			return;
+		}
 		stopped_at_instr.block_exit_stmt_instr_addr = block_taint_cache.at(current_block_start_address).exit_stmt_instr_addr;
 		return;
 	}
@@ -998,8 +1002,9 @@ public:
 		int end = (address + size - 1) & 0xFFF;
 		int clean;
 		bool is_dst_symbolic;
-		if (is_interrupt) {
-			// This is a workaround for CGC transmit syscall which never passes symbolic data
+		if (is_interrupt || is_symbolic_tracking_disabled()) {
+			// If symbolic tracking is disabled, all writes are concrete
+			// is_interrupt flag is a workaround for CGC transmit syscall, which never passes symbolic data
 			is_dst_symbolic = false;
 		}
 		else {
@@ -1682,6 +1687,7 @@ public:
 		current_block_start_address = block_address;
 		current_block_size = block_size;
 		if (is_symbolic_tracking_disabled()) {
+			// We're not checking symbolic registers so no need to propagate taints
 			return;
 		}
 		if (this->block_taint_cache.find(block_address) == this->block_taint_cache.end()) {
@@ -1735,6 +1741,11 @@ public:
 		// Save details of the instruction if it touches symbolic data. This is a special case
 		// because we paused taint propagation due to memory read and so haven't computed
 		// dependencies that need to be saved.
+		if (is_symbolic_tracking_disabled()) {
+			// We're not checking symbolic registers so no need to save anything
+			return;
+		}
+
 		symbolic_instr_details_t instr_details;
 		instr_details.block_addr = current_block_start_address;
 		instr_details.block_size = current_block_size;
@@ -1795,6 +1806,10 @@ public:
 	}
 
 	inline bool is_block_exit_guard_symbolic() {
+		if (is_symbolic_tracking_disabled()) {
+			// We're not checking symbolic registers so this will not be symbolic
+			return false;
+		}
 		block_taint_entry_t block_taint_entry = block_taint_cache.at(current_block_start_address);
 		auto block_exit_guard_taint_status = get_final_taint_status(block_taint_entry.exit_stmt_guard_expr_deps);
 		return (block_exit_guard_taint_status != TAINT_STATUS_CONCRETE);
