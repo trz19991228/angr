@@ -632,10 +632,14 @@ def test_light_memory():
     s = SimState(arch='AMD64', plugins={'registers': SimLightRegisters()})
     assert type(s.registers) is SimLightRegisters
 
+    assert s.regs.rax.symbolic
     s.regs.rax = 0x4142434445464748
-    s.regs.rbx = 0x5555555544444444
     assert (s.regs.rax == 0x4142434445464748).is_true()
+
+    assert s.regs.rbx.symbolic
+    s.regs.rbx = 0x5555555544444444
     assert (s.regs.rbx == 0x5555555544444444).is_true()
+
     assert s.regs.rcx.symbolic
 
     s.regs.ah = 0
@@ -656,10 +660,15 @@ def test_crosspage_read():
     state.stack_push(0x5)
     state.stack_push(0x105c8)
     state.stack_push(0x11223344)
+    
+
+    r1 = state.memory.load(state.regs.sp, 36)
+    assert bytes.fromhex("77665544") in state.solver.eval(r1, cast_to=bytes)
+
     state.stack_push(0x10564)
 
-    r = state.memory.load(state.regs.sp, 40)
-    assert bytes.fromhex("77665544") in state.solver.eval(r, cast_to=bytes)
+    r2 = state.memory.load(state.regs.sp, 40)
+    assert bytes.fromhex("77665544") in state.solver.eval(r2, cast_to=bytes)
     #assert s.solver.eval(r, 2) == ( 0xffeeddccbbaa998877665544, )
 
 def test_underconstrained():
@@ -694,36 +703,6 @@ def test_underconstrained():
     state.memory.store(ptr3, b"\x41", size=1)
     state.memory.load(ptr3, size=1)
 
-def test_hex_dump():
-    s = SimState(arch='AMD64')
-    addr = s.heap.allocate(0x20)
-    s.memory.store(
-        addr,
-        claripy.Concat(
-            claripy.BVV('ABCDEFGH'),
-            claripy.BVS('symbolic_part', 24 * s.arch.bits)
-        )
-    )
-    dump = s.memory.hex_dump(addr, 0x20)
-    nose.tools.assert_equal(
-        dump,
-        'c0000000: 41424344 45464748 ???????? ???????? ABCDEFGH????????\n'
-        'c0000010: ???????? ???????? ???????? ???????? ????????????????\n'
-    )
-
-    dump = s.memory.hex_dump(
-        addr,
-        0x20,
-        extra_constraints=(s.memory.load(addr+0x10, 4) == 0xdeadbeef,),
-        solve=True,
-        endianness='Iend_LE'
-    )
-    nose.tools.assert_equal(
-        dump,
-        'c0000000: 44434241 48474645 ???????? ???????? ABCDEFGH????????\n'
-        'c0000010: efbeadde ???????? ???????? ???????? ....????????????\n'
-    )
-
 if __name__ == '__main__':
     test_crosspage_read()
     test_fast_memory()
@@ -741,4 +720,3 @@ if __name__ == '__main__':
     test_concrete_memset()
     test_paged_memory_membacker_equal_size()
     test_underconstrained()
-    test_hex_dump()
